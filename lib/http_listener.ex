@@ -22,31 +22,22 @@ defmodule HttpListener do
   def get_request(socket, transport) do
     case transport.recv(socket, 0, @timeout) do
       {:ok, data} ->
-        [_, match] = Regex.run(~r/GET (.*) HTTP/, data)
-        match
-        |> String.trim_leading("/")
-        |> String.split("/")
+        Request.parse(data)
         |> case do
-          ["batches", id, operation] ->
-            spawn(fn -> Batch.process_batch(id, operation) end)
-            send_response(socket, transport, "200 OK", "{'status':'ok'}")
-          _ ->
-            send_response(socket, transport, "422 Unprocessable Entity", "{'status':'error', 'message':'invalid parameters'}")
+        {:error, message} -> send_response(socket, transport, "422 Unprocessable Entity", message)
+        request -> send_response(socket, transport, "200 OK", Route.run(request))
         end
         transport.close(socket)
     end
   end
 
-  def send_response(socket, transport, status, content) do
-    header = "HTTP/1.1 #{status}\nContent-Type:text/html\nDate:#{now()}\nServer:ranch\nContent-Length:#{String.length(content)}\n\n"
-    transport.send(socket, header)
-    transport.send(socket, content)
+  def send_response( socket, transport, status, content) do
+    Response.send_header(socket, transport, status)
+    Response.send_content(socket, transport, content)
+
   end
 
-  def now() do
-    DateTime.utc_now
-    |> Calendar.strftime("%a, %-d %b %Y %X GMT")
-  end
+
 
 
 end
